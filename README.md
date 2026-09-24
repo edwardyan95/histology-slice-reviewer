@@ -4,7 +4,7 @@ A local desktop app for numbering tissue sections, marking the anatomical right 
 
 ## Easiest start: Windows app
 
-1. Open [Releases](https://github.com/edwardyan95/histology-slice-reviewer/releases/latest) and download **HistologySliceReviewer-v1.1.0-Windows.zip**.
+1. Open [Releases](https://github.com/edwardyan95/histology-slice-reviewer/releases/latest) and download **HistologySliceReviewer-v1.1.1-Windows.zip**.
 2. Right-click the ZIP → **Extract All**, then double-click **HistologySliceReviewer.exe**. No Python installation is needed.
 3. Choose your original scanner directory: the folder containing the **VSI and its matching companion folder**. Prepared two-channel TIFFs are also supported. The app opens your existing annotations when present.
 
@@ -23,7 +23,7 @@ Later starts use the same launcher and installed libraries. There are no account
 
 1. In **All images**, enter a slice number under each tissue image and click **Save order**. Repeated numbers are allowed for repeat scans. The overview can scroll for larger datasets.
 2. Click a thumbnail to open the detailed view. Click a point **inside the anatomical right hemisphere**, then **Save & next**. A yellow **R** marks your click.
-3. Select a channel to see it in grayscale. Scanner channel names and display ranges come from the VSI. **Overlay** uses the first channel green and second red. Wheel = zoom; right-drag = pan; **Fit** = entire image; **1:1** = native pixels.
+3. Select a channel to see it in grayscale. Scanner channel names and display ranges come from the VSI. **Overlay** uses the first channel green and second red. Wheel = zoom; right-drag = pan; **Fit** = entire image. Both views use small cached previews for fast navigation. **Full resolution** loads original image detail only when requested; its button then becomes **1:1** for native-pixel zoom.
 4. Once every image has a number and a right-side point, click **Export ordered TIFF** and choose a new output filename. The default location is your input directory.
 
 The export sorts by your slice numbers and horizontally flips images whose marked right hemisphere is on the left, so **anatomical right appears on image right**. Both channels receive the same flip. Repeat scans stay together, retaining their original order within a repeated slice number. There is no rotation, alignment, interpolation or intensity scaling. Scanner tile edges are trimmed to the VSI's native boundary, and smaller images are center-padded to a shared canvas. A point does not define a midline or determine up/down orientation. Points close to the image center are rejected as ambiguous.

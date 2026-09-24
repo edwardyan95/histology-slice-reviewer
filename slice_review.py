@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import CancelledError, ThreadPoolExecutor
+from collections import OrderedDict
 import json
 import math
 from pathlib import Path
 import sys
+import threading
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
@@ -36,6 +38,12 @@ class Reviewer:
         self.index = max(0, min(len(self.sources) - 1, self.store.data.get('last_image_index', 0)))
         self.view = ViewTransform(self.width, self.height)
         self.executor = ThreadPoolExecutor(max_workers=1)
+        # Optional native decoding must never hold up navigation between previews.
+        self.detail_executor = ThreadPoolExecutor(max_workers=1)
+        self.detail_future = None
+        self.detail_cancel = None
+        self.preview_cache = OrderedDict()
+        self.full_resolution = False
         self.future = None
         self.load_generation = 0
         self.images = None
@@ -56,6 +64,7 @@ class Reviewer:
         self.title_text = tk.StringVar()
         self.duplicate_text = tk.StringVar()
         self.zoom_text = tk.StringVar()
+        self.view_quality = tk.StringVar(value='Fast preview · exports use original pixels')
         self.gallery = None
         self.export_future = None
         self._build()
@@ -110,7 +119,8 @@ class Reviewer:
             ttk.Radiobutton(toolbar, text=channel, value=channel, variable=self.channel,
                             command=self.queue_render).pack(side='left', padx=(0, 12))
         ttk.Button(toolbar, text='Fit', command=self.fit).pack(side='right')
-        ttk.Button(toolbar, text='1:1', command=self.native_zoom).pack(side='right', padx=6)
+        self.resolution_button = ttk.Button(toolbar, text='Full resolution', command=self.load_full_resolution)
+        self.resolution_button.pack(side='right', padx=6)
         self.canvas = tk.Canvas(center, bg='#10171e', highlightthickness=0, cursor='crosshair')
         self.canvas.pack(fill='both', expand=True)
         self.canvas.bind('<Configure>', self.resized)
@@ -142,6 +152,7 @@ class Reviewer:
                   command=lambda _: self.queue_render()).pack(fill='x', pady=(6, 0))
         ttk.Button(right, text='Reset brightness', command=self.reset_brightness).pack(fill='x', pady=6)
         ttk.Label(right, text=f'{self.channels[0]} and {self.channels[1]} show one channel\nat a time in grayscale.\nOverlay: first green, second red.', foreground='#536574', justify='left').pack(anchor='w', pady=(4, 0))
+        ttk.Label(right, textvariable=self.view_quality, foreground='#536574', wraplength=224).pack(anchor='w', pady=(14, 0))
         bottom = ttk.Frame(outer)
         bottom.pack(fill='x', pady=(14, 0))
         ttk.Button(bottom, text='Previous', command=lambda: self.navigate(-1)).pack(side='left')
@@ -312,19 +323,91 @@ class Reviewer:
         self.next_button.configure(text='Save & finish ✓' if index == len(self.sources) - 1 else 'Save & next →')
         self.title_text.set(f'Image {index + 1} / {len(self.sources)}  ·  {self.sources[index]["matching_export"]}')
         self.images = None
+        self.full_resolution = False
+        self.view_quality.set('Fast preview · exports use original pixels')
+        self.resolution_button.configure(text='Full resolution', state='disabled')
+        if self.detail_cancel is not None:
+            self.detail_cancel.set()
+        if self.detail_future is not None:
+            self.detail_future.cancel()
         self.fit_mode = True
         self.canvas.delete('all')
         self.canvas.create_text(self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2,
-                                text='Loading full-resolution image…', fill='#d9e3e9', font=('Segoe UI', 14))
+                                text='Loading preview…', fill='#d9e3e9', font=('Segoe UI', 14))
         self.load_generation += 1
         generation = self.load_generation
         if self.future:
             self.future.cancel()
         self.future = self.executor.submit(self.read_section, index)
-        self.root.after(50, lambda: self.check_loaded(generation, self.future))
+        future = self.future
+        self.root.after(20, lambda: self.check_loaded(generation, future))
 
     def read_section(self, index):
-        return [self.image_source.display_image(index, c) for c in range(2)]
+        if index in self.preview_cache:
+            self.preview_cache.move_to_end(index)
+            return self.preview_cache[index]
+        preview_dir = self.config_path.parent / self.config.get('preview_dir', 'previews')
+        images = []
+        for c in range(2):
+            path = preview_dir / self.image_source.preview_filename(index, c)
+            if not path.exists():
+                raise ValueError('Preview missing. Reopen this project through Start Reviewer to prepare its previews.')
+            with Image.open(path) as image:
+                images.append(image.convert('L'))
+        if images[0].size != images[1].size:
+            raise ValueError('The two channel previews have different dimensions. Regenerate the project previews.')
+        self.preview_cache[index] = images
+        while len(self.preview_cache) > 6:
+            self.preview_cache.popitem(last=False)
+        return images
+
+    def load_full_resolution(self):
+        if self.images is None:
+            return
+        if self.full_resolution:
+            self.native_zoom()
+            return
+        if self.detail_cancel is not None:
+            self.detail_cancel.set()
+        if self.detail_future is not None:
+            self.detail_future.cancel()
+        cancel = self.detail_cancel = threading.Event()
+        generation = self.load_generation
+        self.resolution_button.configure(text='Loading…', state='disabled')
+        self.view_quality.set('Preview · full resolution loading…')
+        self.status.set('Loading original pixels. You can keep annotating or move to another scan.')
+        self.detail_future = self.detail_executor.submit(self.read_full_section, self.index, cancel)
+        future = self.detail_future
+        self.root.after(80, lambda: self.check_full_resolution(generation, future))
+
+    def read_full_section(self, index, cancel):
+        images = []
+        for c in range(2):
+            if cancel.is_set():
+                raise CancelledError()
+            images.append(self.image_source.display_image(index, c))
+        if cancel.is_set():
+            raise CancelledError()
+        return images
+
+    def check_full_resolution(self, generation, future):
+        if generation != self.load_generation or future is not self.detail_future:
+            return
+        if not future.done():
+            self.root.after(80, lambda: self.check_full_resolution(generation, future))
+            return
+        try:
+            self.images = future.result()
+            self.full_resolution = True
+            self.resolution_button.configure(text='1:1', state='normal')
+            self.view_quality.set('Full resolution · original pixel coordinates')
+            # Keep the exact viewport and annotation coordinates when replacing a preview.
+            self.queue_render()
+            self.status.set('Full resolution loaded. Your point and view position are unchanged.')
+        except Exception as exc:
+            self.resolution_button.configure(text='Full resolution', state='normal')
+            self.view_quality.set('Fast preview · exports use original pixels')
+            self.status.set(f'Full resolution could not load; preview remains available: {exc}')
 
     def check_loaded(self, generation, future):
         if generation != self.load_generation:
@@ -334,6 +417,7 @@ class Reviewer:
             return
         try:
             self.images = future.result()
+            self.resolution_button.configure(state='normal')
             self.fit()
             self.status.set('Click inside the anatomical right hemisphere. Your edits save automatically.')
         except Exception as exc:
@@ -360,7 +444,11 @@ class Reviewer:
             gain = self.brightness.get()
             lut = [min(255, round(v * gain)) for v in range(256)]
             def crop(channel):
-                return self.images[channel].crop((left, top, right, bottom)).resize(size, Image.Resampling.BILINEAR).point(lut)
+                image = self.images[channel]
+                # The view and clicks stay in native coordinates even when display pixels are smaller.
+                box = (left / self.width * image.width, top / self.height * image.height,
+                       right / self.width * image.width, bottom / self.height * image.height)
+                return image.resize(size, Image.Resampling.BILINEAR, box=box).point(lut)
             if self.channel.get() == 'Overlay':
                 frame = Image.merge('RGB', (crop(1), crop(0), Image.new('L', size)))
             else:
@@ -560,6 +648,9 @@ class Reviewer:
             messagebox.showerror('Could not save progress', str(exc), parent=self.root)
             return
         self.load_generation += 1
+        if self.detail_cancel is not None:
+            self.detail_cancel.set()
+        self.detail_executor.shutdown(wait=False, cancel_futures=True)
         self.executor.shutdown(wait=False, cancel_futures=True)
         self.store.close()
         self.root.destroy()

@@ -78,7 +78,7 @@ def run(report_path):
                 check.seek(3)
                 np.testing.assert_array_equal(np.asarray(check), source[1, 1])
                 check.close()
-            report = {'status': 'PASS', 'version': '1.1.0', 'checks': ['Tk startup', 'folder setup', 'overview', 'save order', 'snapshot export', 'both-channel pixel equality', 'uint16 JPEG2000 codec', 'OME-BigTIFF independent decode']}
+            report = {'status': 'PASS', 'version': '1.1.1', 'checks': ['Tk startup', 'folder setup', 'overview', 'save order', 'snapshot export', 'both-channel pixel equality', 'uint16 JPEG2000 codec', 'OME-BigTIFF independent decode']}
     except Exception as exc:
         report = {'status': 'FAIL', 'error': repr(exc), 'traceback': traceback.format_exc()}
         Path(report_path).write_text(json.dumps(report, indent=2), encoding='utf-8')

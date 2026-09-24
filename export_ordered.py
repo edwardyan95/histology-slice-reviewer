@@ -178,7 +178,7 @@ def export(config, output, annotation_snapshot=None):
               'calibration': 'Per-scan native pixel size in source index and OME map annotation; no common physical scale assigned.' if source.scanner else 'pixel; physical scale unassigned',
               'duplicates': 'All scans kept; equal slice numbers retain original scan order.',
               'verified_pages': len(page_hashes), 'verification': 'Pillow decoded every output page; SHA-256 matches source page after the specified horizontal flip.',
-              'page_pixel_sha256': page_hashes, 'exporter_version': '1.1.0', 'plan': plan}
+              'page_pixel_sha256': page_hashes, 'exporter_version': '1.1.1', 'plan': plan}
     if Path(__file__).exists():
         report['export_script_sha256'] = sha256(__file__)
     atomic_write(Path(str(stem) + '_verification.json'), json.dumps(report, indent=2) + '\n')

@@ -16,7 +16,7 @@ def main():
     parser = argparse.ArgumentParser(description='Review, number, orient and export two-channel histology TIFF stacks.')
     parser.add_argument('--input', type=Path, help='Scanner VSI directory, VSI file, or prepared two-channel TIFF.')
     parser.add_argument('--config', type=Path, help='Existing reviewer config (advanced).')
-    parser.add_argument('--version', action='version', version='Histology Slice Reviewer 1.1.0')
+    parser.add_argument('--version', action='version', version='Histology Slice Reviewer 1.1.1')
     parser.add_argument('--self-test', type=Path, help='Run a synthetic smoke test and write its JSON report here.')
     args = parser.parse_args()
     if args.self_test:

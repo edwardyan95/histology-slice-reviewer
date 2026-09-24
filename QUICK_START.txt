@@ -12,6 +12,8 @@ HISTOLOGY SLICE REVIEWER — WINDOWS
    except for the same horizontal reflection when needed.
 
 Annotations and exported results go in your selected input directory.
+Both views use fast previews. Click Full resolution only when you need finer
+detail; exports always use the original full-resolution image pixels.
 Scanner output uses OME-BigTIFF for large stacks; open with Fiji Bio-Formats.
 The app does not upload your data. See README.md for supported inputs and help.
 
