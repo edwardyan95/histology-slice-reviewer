@@ -22,9 +22,12 @@ Only stored tiles are decoded. Absent tiles use the background value stored in
 the ETS header; both channels must have the same tile coverage. Partial edge
 tiles are trimmed to the native image boundary declared by the VSI, and smaller
 images are center-padded with zeros to a common canvas. Tissue pixels are never
-resampled. Pyramid levels are used only for fast overview previews. Detailed
-review and export read level 0. Display ranges come from the scanner and affect
-previews only, not exported uint16 values.
+resampled. Both the overview and default detailed view use cached reduced-size
+previews. Full-resolution detail loads only when requested, and export always
+reads level 0. Clicks on previews map to the original pixel coordinate system;
+the saved point does not move when full-resolution detail replaces the preview.
+Display ranges come from the scanner and affect previews only, not exported
+uint16 values.
 
 ## Export and provenance
 
