@@ -1,0 +1,7 @@
+{
+  "input_tiff": "C:/your-data/full_resolution_stack.tif",
+  "source_index": "C:/your-data/source_index.json",
+  "annotations_dir": "C:/your-data",
+  "preview_dir": "C:/your-data/.slice_review/previews",
+  "dataset_name": "My histology project"
+}

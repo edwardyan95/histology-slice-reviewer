@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "histology-slice-reviewer"
+version = "1.0.0"
+description = "Review, order and orient two-channel histology TIFF stacks."
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = ["numpy==2.3.5", "Pillow==12.0.0", "tifffile==2026.3.3"]
+
+[project.gui-scripts]
+histology-slice-reviewer = "app:main"
+
+[tool.setuptools]
+py-modules = ["app", "project", "slice_review", "review_data", "create_previews", "export_ordered", "self_test"]
