@@ -1,21 +1,41 @@
 """A synthetic end-to-end check for a packaged executable; never reads user scans."""
 import json
+import io
 import sys
 from pathlib import Path
 import tempfile
+import shutil
+import uuid
+from contextlib import contextmanager
 import traceback
 import tkinter as tk
 import numpy as np
 import tifffile
+from PIL import Image
 from project import prepare_project
 from create_previews import create_previews
 from slice_review import Reviewer
 from export_ordered import export
 
 
+@contextmanager
+def test_directory(report_path):
+    # Some SMB servers cannot reopen Windows directories created with mode 0700
+    # (as used by tempfile). Inherit the report directory's normal permissions.
+    parent = Path(report_path).resolve().parent
+    folder = parent / ('self-test-' + uuid.uuid4().hex)
+    folder.mkdir()
+    try:
+        yield folder
+    finally:
+        if folder.resolve().parent != parent or not folder.name.startswith('self-test-'):
+            raise RuntimeError('Unexpected self-test directory.')
+        shutil.rmtree(folder)
+
+
 def run(report_path):
     try:
-        with tempfile.TemporaryDirectory() as name:
+        with test_directory(report_path) as name:
             folder = Path(name)
             source = np.arange(32000, dtype=np.uint16).reshape(2, 2, 80, 100)
             path = folder / 'full_resolution_stack.tif'
@@ -47,7 +67,18 @@ def run(report_path):
             app.close_gallery()
             app.executor.shutdown(wait=True)
             app.close()
-            report = {'status': 'PASS', 'version': '1.0.0', 'checks': ['Tk startup', 'folder setup', 'overview', 'save order', 'snapshot export', 'both-channel pixel equality']}
+            jp2 = io.BytesIO()
+            Image.fromarray(source[0, 0]).save(jp2, format='JPEG2000', irreversible=False)
+            jp2.seek(0)
+            with Image.open(jp2) as check:
+                np.testing.assert_array_equal(np.asarray(check), source[0, 0])
+            big = folder / 'test.ome.tif'
+            tifffile.imwrite(big, source, ome=True, bigtiff=True, photometric='minisblack', metadata={'axes': 'ZCYX'})
+            with Image.open(big) as check:
+                check.seek(3)
+                np.testing.assert_array_equal(np.asarray(check), source[1, 1])
+                check.close()
+            report = {'status': 'PASS', 'version': '1.1.0', 'checks': ['Tk startup', 'folder setup', 'overview', 'save order', 'snapshot export', 'both-channel pixel equality', 'uint16 JPEG2000 codec', 'OME-BigTIFF independent decode']}
     except Exception as exc:
         report = {'status': 'FAIL', 'error': repr(exc), 'traceback': traceback.format_exc()}
         Path(report_path).write_text(json.dumps(report, indent=2), encoding='utf-8')

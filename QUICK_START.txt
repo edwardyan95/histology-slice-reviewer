@@ -2,14 +2,17 @@ HISTOLOGY SLICE REVIEWER — WINDOWS
 
 1. Extract the entire downloaded ZIP into a local folder.
 2. Double-click HistologySliceReviewer.exe. No Python installation is needed.
-3. Choose the folder containing your prepared full-resolution two-channel TIFF.
+3. Choose the original scanner folder containing the VSI and its matching
+   companion folder. All tissue scans appear together; label/overview images
+   are excluded. Prepared full-resolution two-channel TIFFs also work.
 4. Set slice numbers in the overview. Click a thumbnail and mark the anatomical
    right hemisphere. Use Save & next until all images are reviewed.
 5. Click Export ordered TIFF. The output uses your order and places anatomical
    right on image right. Both original channels remain separate and unchanged
    except for the same horizontal reflection when needed.
 
-Annotations and exported results go alongside your input TIFF by default.
+Annotations and exported results go in your selected input directory.
+Scanner output uses OME-BigTIFF for large stacks; open with Fiji Bio-Formats.
 The app does not upload your data. See README.md for supported inputs and help.
 
 The portable executable is not code-signed. Only use the release obtained from

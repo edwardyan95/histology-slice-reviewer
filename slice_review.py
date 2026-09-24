@@ -15,6 +15,7 @@ from PIL import Image, ImageTk
 import tifffile
 
 from review_data import AnnotationStore, ViewTransform
+from image_source import ImageSource
 
 
 class Reviewer:
@@ -24,14 +25,11 @@ class Reviewer:
         self.config = json.loads(self.config_path.read_text(encoding='utf-8'))
         self.dataset_name = self.config.get('dataset_name', 'Histology project')
         resolve = lambda key: (self.config_path.parent / self.config[key]).resolve()
-        self.image_path = resolve('input_tiff')
-        self.sources = json.loads(resolve('source_index').read_text(encoding='utf-8'))['sources']
-        with tifffile.TiffFile(self.image_path) as tif:
-            shape = tif.series[0].shape
-            if len(shape) != 4 or shape[:2] != (len(self.sources), 2):
-                raise ValueError(f'Expected two channels for each image; found dimensions {shape}.')
-            if tif.series[0].axes != 'ZCYX' or tif.pages[0].dtype != np.dtype('uint16'):
-                raise ValueError('The input must be the original 16-bit ZCYX stack.')
+        self.image_source = ImageSource(self.config_path)
+        self.image_path = self.image_source.input_path
+        self.sources = self.image_source.sources
+        self.channels = self.image_source.channels
+        shape = self.image_source.shape
         self.height, self.width = shape[-2:]
         self.store = AnnotationStore(annotations_override or resolve('annotations_dir'),
                                      self.sources, self.image_path, shape)
@@ -49,7 +47,7 @@ class Reviewer:
         self.dirty = False
         self.save_timer = None
         self.render_timer = None
-        self.channel = tk.StringVar(value='FITC')
+        self.channel = tk.StringVar(value=self.channels[0])
         self.slice_number = tk.StringVar()
         self.brightness = tk.DoubleVar(value=1.)
         self.status = tk.StringVar(value='Choose a slice number, then click its anatomical right hemisphere.')
@@ -108,7 +106,7 @@ class Reviewer:
         ttk.Label(center, textvariable=self.title_text, font=('Segoe UI Semibold', 12)).pack(anchor='w', pady=(0, 8))
         toolbar = ttk.Frame(center)
         toolbar.pack(fill='x', pady=(0, 8))
-        for channel in ('FITC', 'Cy3', 'Overlay'):
+        for channel in (*self.channels, 'Overlay'):
             ttk.Radiobutton(toolbar, text=channel, value=channel, variable=self.channel,
                             command=self.queue_render).pack(side='left', padx=(0, 12))
         ttk.Button(toolbar, text='Fit', command=self.fit).pack(side='right')
@@ -143,7 +141,7 @@ class Reviewer:
         ttk.Scale(right, from_=0.25, to=4., variable=self.brightness,
                   command=lambda _: self.queue_render()).pack(fill='x', pady=(6, 0))
         ttk.Button(right, text='Reset brightness', command=self.reset_brightness).pack(fill='x', pady=6)
-        ttk.Label(right, text='FITC and Cy3 show one channel\nat a time in grayscale.\nOverlay: FITC green, Cy3 red.', foreground='#536574', justify='left').pack(anchor='w', pady=(4, 0))
+        ttk.Label(right, text=f'{self.channels[0]} and {self.channels[1]} show one channel\nat a time in grayscale.\nOverlay: first green, second red.', foreground='#536574', justify='left').pack(anchor='w', pady=(4, 0))
         bottom = ttk.Frame(outer)
         bottom.pack(fill='x', pady=(14, 0))
         ttk.Button(bottom, text='Previous', command=lambda: self.navigate(-1)).pack(side='left')
@@ -163,7 +161,7 @@ class Reviewer:
         if self.dirty and not self.save_current():
             return
         preview_dir = self.config_path.parent / self.config.get('preview_dir', 'previews')
-        if not all((preview_dir / f'{i + 1:02d}_FITC.png').exists() for i in range(len(self.sources))):
+        if not all((preview_dir / self.image_source.preview_filename(i, 0)).exists() for i in range(len(self.sources))):
             self.status.set('The all-images previews are not ready. You can continue reviewing individual images.')
             return
         gallery = self.gallery = tk.Toplevel(self.root)
@@ -174,8 +172,8 @@ class Reviewer:
         heading = ttk.Frame(gallery, padding=(16, 12))
         heading.pack(fill='x')
         ttk.Label(heading, text='Set the slice order together', style='Heading.TLabel').pack(side='left')
-        self.gallery_channel = tk.StringVar(value='FITC')
-        for mode in ('FITC', 'Cy3', 'Overlay'):
+        self.gallery_channel = tk.StringVar(value=self.channels[0])
+        for mode in (*self.channels, 'Overlay'):
             ttk.Radiobutton(heading, text=mode, value=mode, variable=self.gallery_channel,
                             command=self.render_gallery).pack(side='right', padx=8)
         ttk.Label(gallery, text='Enter each tissue slice number below its image. Click an image to review its right-side point. Repeated numbers are allowed.',
@@ -212,8 +210,8 @@ class Reviewer:
             ttk.Spinbox(controls, from_=1, to=99999, width=5, textvariable=variable,
                         font=('Segoe UI Semibold', 12)).pack(side='right')
             ttk.Label(controls, text='Slice ').pack(side='right')
-            for mode in ('FITC', 'Cy3'):
-                with Image.open(preview_dir / f'{i + 1:02d}_{mode}.png') as im:
+            for c, mode in enumerate(self.channels):
+                with Image.open(preview_dir / self.image_source.preview_filename(i, c)) as im:
                     self.gallery_base[(i, mode)] = im.copy()
         bottom = ttk.Frame(gallery, padding=(16, 10))
         bottom.pack(fill='x')
@@ -231,7 +229,7 @@ class Reviewer:
         mode = self.gallery_channel.get()
         for i, cv in enumerate(self.gallery_canvases):
             if mode == 'Overlay':
-                g, r = self.gallery_base[(i, 'FITC')], self.gallery_base[(i, 'Cy3')]
+                g, r = self.gallery_base[(i, self.channels[0])], self.gallery_base[(i, self.channels[1])]
                 im = Image.merge('RGB', (r, g, Image.new('L', r.size)))
             else:
                 im = self.gallery_base[(i, mode)].copy()
@@ -326,14 +324,7 @@ class Reviewer:
         self.root.after(50, lambda: self.check_loaded(generation, self.future))
 
     def read_section(self, index):
-        result = []
-        with tifffile.TiffFile(self.image_path) as tif:
-            for c, (low, high) in enumerate(((2, 573), (0, 418))):
-                raw = tif.pages[index * 2 + c].asarray()
-                # Display-only mapping. Raw TIFF and saved coordinates are untouched.
-                lut = np.clip((np.arange(65536, dtype=np.float32) - low) * (255. / (high - low)), 0, 255).astype(np.uint8)
-                result.append(Image.fromarray(lut[raw]))
-        return result
+        return [self.image_source.display_image(index, c) for c in range(2)]
 
     def check_loaded(self, generation, future):
         if generation != self.load_generation:
@@ -373,7 +364,7 @@ class Reviewer:
             if self.channel.get() == 'Overlay':
                 frame = Image.merge('RGB', (crop(1), crop(0), Image.new('L', size)))
             else:
-                frame = crop(0 if self.channel.get() == 'FITC' else 1)
+                frame = crop(self.channels.index(self.channel.get()))
             self.photo = ImageTk.PhotoImage(frame)
             self.canvas.create_image(*self.view.canvas_at(left, top), image=self.photo, anchor='nw')
         self.draw_marker()
@@ -529,7 +520,7 @@ class Reviewer:
             messagebox.showerror('Review incomplete', str(exc), parent=self.root)
             return
         filename = filedialog.asksaveasfilename(parent=self.root, title='Export with anatomical right on image right',
-            initialdir=self.store.directory, initialfile=self.image_path.stem + '_ordered_right_on_right.tif',
+            initialdir=self.store.directory, initialfile=self.image_path.stem + '_ordered_right_on_right' + ('.ome.tif' if self.image_source.scanner else '.tif'),
             defaultextension='.tif', filetypes=[('TIFF stack', '*.tif')], confirmoverwrite=False)
         if not filename:
             return

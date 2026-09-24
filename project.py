@@ -21,6 +21,8 @@ def inspect_stack(path):
 
 def locate_stack(folder):
     folder = Path(folder)
+    if any(p.suffix.lower() == '.vsi' for p in folder.iterdir()):
+        return folder
     candidates = sorted(folder.glob('*full_resolution*stack.tif'))
     if len(candidates) == 1:
         return candidates[0]
@@ -29,6 +31,9 @@ def locate_stack(folder):
 
 def prepare_project(image_path, progress=None):
     image_path = Path(image_path).resolve()
+    if image_path.is_dir() or image_path.suffix.lower() == '.vsi':
+        from scanner import prepare_scanner
+        return prepare_scanner(image_path if image_path.is_dir() else image_path.parent, progress)
     shape = inspect_stack(image_path)
     folder = image_path.parent
     work = folder / '.slice_review'

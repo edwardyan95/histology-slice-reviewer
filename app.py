@@ -14,9 +14,9 @@ from slice_review import Reviewer
 
 def main():
     parser = argparse.ArgumentParser(description='Review, number, orient and export two-channel histology TIFF stacks.')
-    parser.add_argument('--input', type=Path, help='Original full-resolution TIFF, or its containing folder.')
+    parser.add_argument('--input', type=Path, help='Scanner VSI directory, VSI file, or prepared two-channel TIFF.')
     parser.add_argument('--config', type=Path, help='Existing reviewer config (advanced).')
-    parser.add_argument('--version', action='version', version='Histology Slice Reviewer 1.0.0')
+    parser.add_argument('--version', action='version', version='Histology Slice Reviewer 1.1.0')
     parser.add_argument('--self-test', type=Path, help='Run a synthetic smoke test and write its JSON report here.')
     args = parser.parse_args()
     if args.self_test:
@@ -29,7 +29,7 @@ def main():
     image_path = args.input
     if not config:
         if image_path is None:
-            chosen = filedialog.askdirectory(title='Choose the folder containing your full-resolution TIFF', parent=root)
+            chosen = filedialog.askdirectory(title='Choose your scanner folder (VSI + companion folder), or TIFF folder', parent=root)
             if not chosen:
                 root.destroy()
                 return
@@ -38,8 +38,8 @@ def main():
             try:
                 image_path = locate_stack(image_path)
             except ValueError:
-                chosen = filedialog.askopenfilename(title='Select the original full-resolution two-channel TIFF',
-                    initialdir=image_path, filetypes=[('TIFF images', '*.tif *.tiff')], parent=root)
+                chosen = filedialog.askopenfilename(title='Select a scanner VSI or full-resolution two-channel TIFF',
+                    initialdir=image_path, filetypes=[('Scanner / TIFF images', '*.vsi *.tif *.tiff')], parent=root)
                 if not chosen:
                     root.destroy()
                     return

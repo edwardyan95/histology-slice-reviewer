@@ -26,6 +26,7 @@ slice_annotations*.json
 *_annotations_used.json
 *_verification.json
 source_index.json
+*_source_index.json
 config.json
 .review.lock
 *.pending.tif
